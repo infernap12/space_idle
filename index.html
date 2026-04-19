@@ -4,52 +4,207 @@
 <meta charset="utf-8">
 <title>Fleet Suggest</title>
 <style>
-  body { font-family: ui-monospace, Menlo, Consolas, monospace; max-width: 900px; margin: 2rem auto; padding: 0 1rem; background: #111; color: #ddd; }
-  h1 { font-size: 1.25rem; }
-  label { display: block; margin-top: 0.5rem; font-size: 0.9rem; }
-  input { width: 100%; padding: 0.4rem; background: #1a1a1a; color: #eee; border: 1px solid #333; border-radius: 3px; font-family: inherit; box-sizing: border-box; }
+  :root {
+    --bg: #0b0d12;
+    --panel: #161a22;
+    --panel-2: #1d222d;
+    --border: #2a3040;
+    --text: #e6e8ef;
+    --muted: #8890a3;
+    --accent: #4ea8ff;
+    --accent-2: #2a5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    max-width: 960px; margin: 2rem auto; padding: 0 1rem;
+    background: var(--bg); color: var(--text);
+  }
+  h1 { font-size: 1.25rem; margin: 0 0 1rem; }
+  h2 { font-size: 0.95rem; margin: 0 0 0.5rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  label { display: block; margin-top: 0.5rem; font-size: 0.85rem; color: var(--muted); }
+  input[type=number], input[type=text] {
+    width: 100%; padding: 0.5rem; background: var(--panel); color: var(--text);
+    border: 1px solid var(--border); border-radius: 4px;
+    font-family: inherit; font-size: 0.95rem;
+  }
+  input:focus { outline: none; border-color: var(--accent); }
   .row { display: flex; gap: 0.75rem; }
   .row > div { flex: 1; }
-  button { margin-top: 1rem; padding: 0.5rem 1rem; background: #2a5; color: #000; border: none; border-radius: 3px; font-weight: bold; cursor: pointer; }
-  button:disabled { background: #444; color: #888; cursor: wait; }
-  pre { background: #000; padding: 1rem; border: 1px solid #333; border-radius: 3px; white-space: pre-wrap; word-break: break-word; margin-top: 1rem; }
-  .muted { color: #888; font-size: 0.8rem; }
+  button {
+    padding: 0.55rem 1rem; background: var(--accent-2); color: #001;
+    border: none; border-radius: 4px; font-weight: 600; cursor: pointer;
+    font-size: 0.95rem;
+  }
+  button:disabled { background: #333; color: #777; cursor: wait; }
+  button.ghost {
+    background: var(--panel); color: var(--text); border: 1px solid var(--border);
+    padding: 0.4rem 0.7rem; font-weight: 500;
+  }
+  button.ghost:hover:not(:disabled) { background: var(--panel-2); border-color: var(--accent); }
+  button.ghost:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  #go { margin-top: 1rem; }
+
+  #result { margin-top: 1.5rem; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 1rem; }
+  .nav {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 0.75rem;
+  }
+  .nav .counter { font-variant-numeric: tabular-nums; color: var(--muted); }
+  .nav .counter b { color: var(--text); }
+
+  .best-badge {
+    display: inline-block; padding: 0.15rem 0.5rem; font-size: 0.7rem;
+    background: var(--accent-2); color: #001; border-radius: 10px;
+    margin-left: 0.5rem; font-weight: 700; letter-spacing: 0.05em;
+  }
+
+  .stats {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem 1rem;
+    font-size: 0.9rem; margin-bottom: 1rem;
+  }
+  .stats .k { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  .stats .v { font-variant-numeric: tabular-nums; font-weight: 600; }
+
+  .content { display: grid; grid-template-columns: auto 1fr; gap: 1.25rem; align-items: start; }
+  @media (max-width: 640px) { .content { grid-template-columns: 1fr; } }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 1.5rem repeat(2, 60px);
+    gap: 4px;
+    background: var(--panel-2);
+    padding: 0.5rem;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    user-select: none;
+  }
+  .grid .hdr {
+    text-align: center; font-size: 0.75rem; color: var(--muted);
+    display: flex; align-items: center; justify-content: center; height: 1.25rem;
+  }
+  .grid .rhdr {
+    text-align: center; font-size: 0.75rem; color: var(--muted);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .cell {
+    width: 60px; height: 60px; background: #0a0c11; border: 1px solid var(--border);
+    border-radius: 4px; position: relative; display: flex; align-items: center; justify-content: center;
+  }
+  .cell svg { width: 80%; height: 80%; }
+  .cell .badge {
+    position: absolute; top: 2px; right: 3px; font-size: 0.65rem;
+    background: rgba(0,0,0,0.6); color: var(--text); padding: 0 3px; border-radius: 3px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ships { display: flex; flex-direction: column; gap: 0.4rem; }
+  .ship-row {
+    display: flex; align-items: center; gap: 0.6rem; padding: 0.4rem 0.6rem;
+    background: var(--panel-2); border-radius: 4px; border: 1px solid var(--border);
+    font-size: 0.85rem;
+  }
+  .ship-row .icon { width: 28px; height: 28px; flex-shrink: 0; }
+  .ship-row .name { font-weight: 600; }
+  .ship-row .mods { color: var(--muted); font-size: 0.8rem; }
+
+  .status { color: var(--muted); font-size: 0.85rem; margin-top: 1rem; }
+  .error { color: #ff6b6b; }
+
+  .hidden { display: none; }
 </style>
 </head>
 <body>
 <h1>Fleet Suggest</h1>
 
 <div class="row">
-  <div>
-    <label>Node <input id="node" placeholder="e.g. B1 or BB3" autocomplete="off"></label>
-  </div>
-  <div>
-    <label>Stat level <input id="stat" type="number" step="any" placeholder="e.g. 12.5"></label>
-  </div>
+  <div><label>Node <input id="node" type="text" placeholder="e.g. B1 or BB3" autocomplete="off"></label></div>
+  <div><label>Stat level <input id="stat" type="number" step="any" placeholder="e.g. 12.5"></label></div>
 </div>
-
 <div class="row">
-  <div>
-    <label>Galaxy <input id="galaxy" type="number" value="4"></label>
-  </div>
-  <div>
-    <label>Version <input id="version" type="number" value="75103"></label>
-  </div>
+  <div><label>Galaxy <input id="galaxy" type="number" value="4"></label></div>
+  <div><label>Version <input id="version" type="number" value="75103"></label></div>
 </div>
-
 <label><input type="checkbox" id="boss"> Boss (for BB nodes)</label>
 
 <button id="go">Suggest</button>
 
-<pre id="out" class="muted">Output will appear here.</pre>
+<div id="status" class="status">Enter a node and stat level, then Suggest.</div>
+
+<div id="result" class="hidden">
+  <div class="card">
+    <div class="nav">
+      <button class="ghost" id="prev" title="Previous (←)">← Prev</button>
+      <div class="counter">Entry <b id="counter">1</b> / <b id="total">1</b><span id="bestBadge" class="best-badge hidden">BEST</span></div>
+      <button class="ghost" id="next" title="Next (→)">Next →</button>
+    </div>
+
+    <div class="stats">
+      <div><div class="k">Resources used</div><div class="v" id="sResUsed">–</div></div>
+      <div><div class="k">Committed</div><div class="v" id="sResCommitted">–</div></div>
+      <div><div class="k">Saved</div><div class="v" id="sSaved">–</div></div>
+      <div><div class="k">Fleet stats</div><div class="v" id="sStats">–</div></div>
+      <div><div class="k">Entry #</div><div class="v" id="sOrig">–</div></div>
+      <div><div class="k">Event</div><div class="v" id="sEvent" style="font-size:0.8rem">–</div></div>
+    </div>
+
+    <div class="content">
+      <div>
+        <h2>Grid</h2>
+        <div class="grid" id="shipGrid"></div>
+      </div>
+      <div>
+        <h2>Ships</h2>
+        <div class="ships" id="shipList"></div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <script>
 const API_URL = "https://api.spaceidle.xyz/suggest_fleet_battle/";
 
-const SHIP_ABBREV = {
-  Fighter: ">", Corvette: "C", Frigate: "F", Cruiser: "R",
-  HeavyCruiser: "H", Destroyer: "D", PlayerCommandShip: "@",
+const SHIP_TYPES = {
+  Fighter:           { color: "#ffd23f", abbr: "Ft" },
+  Corvette:          { color: "#4ecdc4", abbr: "Co" },
+  Frigate:           { color: "#6bcB77", abbr: "Fr" },
+  Cruiser:           { color: "#ff9f45", abbr: "Cr" },
+  HeavyCruiser:      { color: "#ef476f", abbr: "HC" },
+  Destroyer:         { color: "#b388ff", abbr: "Ds" },
+  PlayerCommandShip: { color: "#ffffff", abbr: "CS" },
 };
+
+// Simple distinct silhouettes per ship type. viewBox 0 0 100 100.
+function shipSvg(type) {
+  const meta = SHIP_TYPES[type] || { color: "#888", abbr: "?" };
+  const c = meta.color;
+  const paths = {
+    Fighter:
+      `<polygon points="50,15 65,70 50,60 35,70" fill="${c}" stroke="#000" stroke-width="2"/>`,
+    Corvette:
+      `<polygon points="50,10 70,55 60,75 40,75 30,55" fill="${c}" stroke="#000" stroke-width="2"/>`,
+    Frigate:
+      `<polygon points="50,8 72,50 62,80 38,80 28,50" fill="${c}" stroke="#000" stroke-width="2"/>
+       <rect x="42" y="55" width="16" height="25" fill="#000" opacity="0.3"/>`,
+    Cruiser:
+      `<polygon points="50,8 78,35 78,70 50,88 22,70 22,35" fill="${c}" stroke="#000" stroke-width="2"/>
+       <circle cx="50" cy="50" r="10" fill="#000" opacity="0.35"/>`,
+    HeavyCruiser:
+      `<polygon points="50,6 82,30 85,72 50,92 15,72 18,30" fill="${c}" stroke="#000" stroke-width="2"/>
+       <rect x="35" y="35" width="30" height="30" fill="#000" opacity="0.35"/>
+       <rect x="42" y="20" width="16" height="10" fill="${c}" stroke="#000" stroke-width="1.5"/>`,
+    Destroyer:
+      `<polygon points="50,8 85,45 75,85 50,75 25,85 15,45" fill="${c}" stroke="#000" stroke-width="2"/>
+       <polygon points="50,30 62,55 50,60 38,55" fill="#000" opacity="0.4"/>`,
+    PlayerCommandShip:
+      `<polygon points="50,5 60,38 92,38 66,58 76,92 50,72 24,92 34,58 8,38 40,38"
+         fill="${c}" stroke="#000" stroke-width="2"/>`,
+  };
+  const body = paths[type] || `<rect x="20" y="20" width="60" height="60" fill="${c}" stroke="#000" stroke-width="2"/>`;
+  return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-label="${type}">${body}</svg>`;
+}
 
 function parseFleetString(raw) {
   let s = raw.trim();
@@ -85,27 +240,7 @@ function parseFleetString(raw) {
   return { resources_used, resources_committed, fleet_stats: isNaN(fleet_stats) ? null : fleet_stats, ships };
 }
 
-function renderGrid(ships) {
-  const grid = new Map();
-  for (const ship of ships) {
-    const ch = (SHIP_ABBREV[ship.ship_type] || "?")[0];
-    for (const [c, r] of ship.positions) grid.set(`${c},${r}`, ch);
-  }
-  let out = "   B   A\n";
-  for (let row = 0; row < 5; row++) {
-    const b = grid.get(`1,${row}`) || " ";
-    const a = grid.get(`0,${row}`) || " ";
-    out += `${row + 1} [${b}] [${a}]\n`;
-  }
-  return out;
-}
-
-function formatMods(mods) {
-  return mods.length ? mods.join(", ") : "none";
-}
-
 function parseCsv(text) {
-  // Simple CSV parse: only the first two columns are needed (id, name).
   const lines = text.split(/\r?\n/).slice(1);
   const rows = [];
   for (const line of lines) {
@@ -129,21 +264,6 @@ function findFleetEventId(rows, galaxy, nodeName) {
   return null;
 }
 
-function formatEntry(origIdx, entry) {
-  const saved = entry.resources_committed - entry.resources_used;
-  let out = `═══ Entry ${origIdx} ═══\n`;
-  out += `Resources: ${entry.resources_used.toFixed(2)} / ${entry.resources_committed.toFixed(2)} (saved: ${saved.toFixed(2)})\n`;
-  if (entry.fleet_stats !== null) out += `Fleet stats: ${entry.fleet_stats.toFixed(2)}\n`;
-  out += `\nShips:\n`;
-  for (const ship of entry.ships) {
-    out += `  ${ship.ship_type} x${ship.count} [mods: ${formatMods(ship.mods)}]\n`;
-    const ps = ship.positions.map(([c, r]) => `(${c},${r})`).join(", ");
-    out += `    positions: ${ps}\n`;
-  }
-  out += `\n${renderGrid(entry.ships)}`;
-  return out;
-}
-
 let csvRowsCache = null;
 async function loadCsv() {
   if (csvRowsCache) return csvRowsCache;
@@ -153,19 +273,123 @@ async function loadCsv() {
   return csvRowsCache;
 }
 
-const outEl = document.getElementById("out");
-const btn = document.getElementById("go");
+const state = {
+  entries: [],   // Array of { origIdx, entry }
+  index: 0,
+  eventId: "",
+};
+
+const els = {
+  node: document.getElementById("node"),
+  stat: document.getElementById("stat"),
+  galaxy: document.getElementById("galaxy"),
+  version: document.getElementById("version"),
+  boss: document.getElementById("boss"),
+  go: document.getElementById("go"),
+  status: document.getElementById("status"),
+  result: document.getElementById("result"),
+  prev: document.getElementById("prev"),
+  next: document.getElementById("next"),
+  counter: document.getElementById("counter"),
+  total: document.getElementById("total"),
+  bestBadge: document.getElementById("bestBadge"),
+  sResUsed: document.getElementById("sResUsed"),
+  sResCommitted: document.getElementById("sResCommitted"),
+  sSaved: document.getElementById("sSaved"),
+  sStats: document.getElementById("sStats"),
+  sOrig: document.getElementById("sOrig"),
+  sEvent: document.getElementById("sEvent"),
+  shipGrid: document.getElementById("shipGrid"),
+  shipList: document.getElementById("shipList"),
+};
+
+function fmt(n, d = 2) {
+  if (n === null || n === undefined || isNaN(n)) return "–";
+  return Number(n).toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
+}
+
+function renderGrid(ships) {
+  // 2 columns (B=1, A=0) × 5 rows.
+  const occ = new Map();
+  const countAt = new Map();
+  for (const ship of ships) {
+    for (const [c, r] of ship.positions) {
+      const key = `${c},${r}`;
+      occ.set(key, ship.ship_type);
+      countAt.set(key, (countAt.get(key) || 0) + 1);
+    }
+  }
+
+  const parts = [];
+  parts.push(`<div class="rhdr"></div><div class="hdr">B</div><div class="hdr">A</div>`);
+  for (let row = 0; row < 5; row++) {
+    parts.push(`<div class="rhdr">${row + 1}</div>`);
+    for (const col of [1, 0]) {
+      const key = `${col},${row}`;
+      const type = occ.get(key);
+      if (type) {
+        const badgeCount = countAt.get(key);
+        const badge = badgeCount > 1 ? `<span class="badge">×${badgeCount}</span>` : "";
+        parts.push(`<div class="cell" title="${type} @ (${col},${row})">${shipSvg(type)}${badge}</div>`);
+      } else {
+        parts.push(`<div class="cell"></div>`);
+      }
+    }
+  }
+  return parts.join("");
+}
+
+function renderShipList(ships) {
+  if (!ships.length) return `<div class="ship-row"><span class="mods">No ships</span></div>`;
+  return ships.map(s => {
+    const mods = s.mods.length ? s.mods.join(", ") : "no mods";
+    const positions = s.positions.map(([c, r]) => `(${c},${r + 1})`).join(" ");
+    return `
+      <div class="ship-row">
+        <div class="icon">${shipSvg(s.ship_type)}</div>
+        <div style="flex:1; min-width: 0;">
+          <div><span class="name">${s.ship_type}</span> × ${s.count}</div>
+          <div class="mods">${mods} · ${positions || "no positions"}</div>
+        </div>
+      </div>`;
+  }).join("");
+}
+
+function showCurrent() {
+  const n = state.entries.length;
+  if (!n) return;
+  if (state.index < 0) state.index = 0;
+  if (state.index >= n) state.index = n - 1;
+
+  const { origIdx, entry } = state.entries[state.index];
+  els.counter.textContent = state.index + 1;
+  els.total.textContent = n;
+  els.bestBadge.classList.toggle("hidden", state.index !== 0);
+  els.prev.disabled = state.index === 0;
+  els.next.disabled = state.index === n - 1;
+
+  els.sResUsed.textContent = fmt(entry.resources_used);
+  els.sResCommitted.textContent = fmt(entry.resources_committed);
+  els.sSaved.textContent = fmt(entry.resources_committed - entry.resources_used);
+  els.sStats.textContent = entry.fleet_stats !== null ? fmt(entry.fleet_stats) : "–";
+  els.sOrig.textContent = `#${origIdx}`;
+  els.sEvent.textContent = state.eventId;
+
+  els.shipGrid.innerHTML = renderGrid(entry.ships);
+  els.shipList.innerHTML = renderShipList(entry.ships);
+}
 
 async function run() {
-  outEl.classList.remove("muted");
-  outEl.textContent = "Working...";
-  btn.disabled = true;
+  els.status.classList.remove("error");
+  els.status.textContent = "Working…";
+  els.result.classList.add("hidden");
+  els.go.disabled = true;
   try {
-    const node = document.getElementById("node").value.trim();
-    const stat = parseFloat(document.getElementById("stat").value);
-    const galaxy = parseInt(document.getElementById("galaxy").value, 10);
-    const version = parseInt(document.getElementById("version").value, 10);
-    const has_boss = document.getElementById("boss").checked;
+    const node = els.node.value.trim();
+    const stat = parseFloat(els.stat.value);
+    const galaxy = parseInt(els.galaxy.value, 10);
+    const version = parseInt(els.version.value, 10);
+    const has_boss = els.boss.checked;
 
     if (!node) throw new Error("Node name required");
     if (isNaN(stat)) throw new Error("Invalid stat level");
@@ -174,14 +398,7 @@ async function run() {
     const fleet_event_id = findFleetEventId(rows, galaxy, node);
     if (!fleet_event_id) throw new Error(`Could not find node '${node}' in galaxy ${galaxy}`);
 
-    const body = {
-      fleet_event_id,
-      version,
-      combat_stat_level: stat,
-      hazard_node_list: "",
-      has_boss,
-    };
-
+    const body = { fleet_event_id, version, combat_stat_level: stat, hazard_node_list: "", has_boss };
     const res = await fetch(API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -190,28 +407,44 @@ async function run() {
     if (!res.ok) throw new Error(`Server returned ${res.status}`);
     const lines = await res.json();
 
-    const entries = [];
+    const parsed = [];
     lines.forEach((line, i) => {
       const trimmed = (line || "").trim();
       if (!trimmed) return;
       const e = parseFleetString(trimmed);
-      if (e) entries.push([i + 1, e]);
+      if (e) parsed.push({ origIdx: i + 1, entry: e });
     });
-    entries.sort((a, b) => b[1].resources_used - a[1].resources_used);
+    // Best first: lowest resources_used.
+    parsed.sort((a, b) => a.entry.resources_used - b.entry.resources_used);
 
-    let text = `Found: ${fleet_event_id}\nSending: ${JSON.stringify(body)}\n\n`;
-    for (const [idx, entry] of entries) text += formatEntry(idx, entry) + "\n";
-    outEl.textContent = text.trimEnd() || "(no entries)";
+    if (!parsed.length) throw new Error("Server returned no fleet entries");
+
+    state.entries = parsed;
+    state.index = 0;
+    state.eventId = fleet_event_id;
+
+    els.status.textContent = `${parsed.length} suggestion${parsed.length === 1 ? "" : "s"} for ${fleet_event_id}.`;
+    els.result.classList.remove("hidden");
+    showCurrent();
   } catch (e) {
-    outEl.textContent = `Error: ${e.message || e}`;
+    els.status.classList.add("error");
+    els.status.textContent = `Error: ${e.message || e}`;
   } finally {
-    btn.disabled = false;
+    els.go.disabled = false;
   }
 }
 
-btn.addEventListener("click", run);
+els.go.addEventListener("click", run);
+els.prev.addEventListener("click", () => { state.index--; showCurrent(); });
+els.next.addEventListener("click", () => { state.index++; showCurrent(); });
+
 document.addEventListener("keydown", e => {
-  if (e.key === "Enter" && !btn.disabled) run();
+  const typing = document.activeElement && ["INPUT", "TEXTAREA"].includes(document.activeElement.tagName);
+  if (e.key === "Enter" && !els.go.disabled && typing) { run(); return; }
+  if (state.entries.length) {
+    if (e.key === "ArrowLeft" && !els.prev.disabled) { state.index--; showCurrent(); }
+    else if (e.key === "ArrowRight" && !els.next.disabled) { state.index++; showCurrent(); }
+  }
 });
 </script>
 </body>
