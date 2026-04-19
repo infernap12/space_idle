@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Fleet Suggest</title>
+<style>
+  body { font-family: ui-monospace, Menlo, Consolas, monospace; max-width: 900px; margin: 2rem auto; padding: 0 1rem; background: #111; color: #ddd; }
+  h1 { font-size: 1.25rem; }
+  label { display: block; margin-top: 0.5rem; font-size: 0.9rem; }
+  input { width: 100%; padding: 0.4rem; background: #1a1a1a; color: #eee; border: 1px solid #333; border-radius: 3px; font-family: inherit; box-sizing: border-box; }
+  .row { display: flex; gap: 0.75rem; }
+  .row > div { flex: 1; }
+  button { margin-top: 1rem; padding: 0.5rem 1rem; background: #2a5; color: #000; border: none; border-radius: 3px; font-weight: bold; cursor: pointer; }
+  button:disabled { background: #444; color: #888; cursor: wait; }
+  pre { background: #000; padding: 1rem; border: 1px solid #333; border-radius: 3px; white-space: pre-wrap; word-break: break-word; margin-top: 1rem; }
+  .muted { color: #888; font-size: 0.8rem; }
+</style>
+</head>
+<body>
+<h1>Fleet Suggest</h1>
+
+<div class="row">
+  <div>
+    <label>Node <input id="node" placeholder="e.g. B1 or BB3" autocomplete="off"></label>
+  </div>
+  <div>
+    <label>Stat level <input id="stat" type="number" step="any" placeholder="e.g. 12.5"></label>
+  </div>
+</div>
+
+<div class="row">
+  <div>
+    <label>Galaxy <input id="galaxy" type="number" value="4"></label>
+  </div>
+  <div>
+    <label>Version <input id="version" type="number" value="75103"></label>
+  </div>
+</div>
+
+<label><input type="checkbox" id="boss"> Boss (for BB nodes)</label>
+
+<button id="go">Suggest</button>
+
+<pre id="out" class="muted">Output will appear here.</pre>
+
+<script>
+const API_URL = "https://api.spaceidle.xyz/suggest_fleet_battle/";
+
+const SHIP_ABBREV = {
+  Fighter: ">", Corvette: "C", Frigate: "F", Cruiser: "R",
+  HeavyCruiser: "H", Destroyer: "D", PlayerCommandShip: "@",
+};
+
+function parseFleetString(raw) {
+  let s = raw.trim();
+  if (s.startsWith("V2")) s = s.slice(2);
+  const parts = s.split("|");
+  if (parts.length < 2) return null;
+
+  const header = parts[0].split(",");
+  const resources_used = parseFloat(header[0]);
+  const resources_committed = parseFloat(header[1]);
+  const fleet_stats = header[2] !== undefined ? parseFloat(header[2]) : null;
+  if (isNaN(resources_used) || isNaN(resources_committed)) return null;
+
+  const ships = [];
+  for (const part of parts.slice(2)) {
+    if (!part) continue;
+    if (!part.includes(";")) break;
+    const sp = part.split(";");
+    if (!sp.length || sp[0] === "Null") continue;
+
+    const ship_type = sp[0];
+    const mods = sp[1] ? sp[1].split(",").filter(Boolean) : [];
+    const positions = sp[2]
+      ? sp[2].split("*").map(p => {
+          const [c, r] = p.split(",");
+          return [parseInt(c, 10), parseInt(r, 10)];
+        }).filter(([c, r]) => !isNaN(c) && !isNaN(r))
+      : [];
+    const count = sp[3] !== undefined ? (parseInt(sp[3], 10) || positions.length) : positions.length;
+    ships.push({ ship_type, mods, positions, count });
+  }
+
+  return { resources_used, resources_committed, fleet_stats: isNaN(fleet_stats) ? null : fleet_stats, ships };
+}
+
+function renderGrid(ships) {
+  const grid = new Map();
+  for (const ship of ships) {
+    const ch = (SHIP_ABBREV[ship.ship_type] || "?")[0];
+    for (const [c, r] of ship.positions) grid.set(`${c},${r}`, ch);
+  }
+  let out = "   B   A\n";
+  for (let row = 0; row < 5; row++) {
+    const b = grid.get(`1,${row}`) || " ";
+    const a = grid.get(`0,${row}`) || " ";
+    out += `${row + 1} [${b}] [${a}]\n`;
+  }
+  return out;
+}
+
+function formatMods(mods) {
+  return mods.length ? mods.join(", ") : "none";
+}
+
+function parseCsv(text) {
+  // Simple CSV parse: only the first two columns are needed (id, name).
+  const lines = text.split(/\r?\n/).slice(1);
+  const rows = [];
+  for (const line of lines) {
+    if (!line) continue;
+    const i1 = line.indexOf(",");
+    if (i1 < 0) continue;
+    const i2 = line.indexOf(",", i1 + 1);
+    const id = line.slice(0, i1);
+    const name = i2 < 0 ? line.slice(i1 + 1) : line.slice(i1 + 1, i2);
+    rows.push({ id, name });
+  }
+  return rows;
+}
+
+function findFleetEventId(rows, galaxy, nodeName) {
+  const prefix = `g${galaxy}_`;
+  const up = nodeName.toUpperCase();
+  for (const { id, name } of rows) {
+    if (id.startsWith(prefix) && name === up) return id;
+  }
+  return null;
+}
+
+function formatEntry(origIdx, entry) {
+  const saved = entry.resources_committed - entry.resources_used;
+  let out = `═══ Entry ${origIdx} ═══\n`;
+  out += `Resources: ${entry.resources_used.toFixed(2)} / ${entry.resources_committed.toFixed(2)} (saved: ${saved.toFixed(2)})\n`;
+  if (entry.fleet_stats !== null) out += `Fleet stats: ${entry.fleet_stats.toFixed(2)}\n`;
+  out += `\nShips:\n`;
+  for (const ship of entry.ships) {
+    out += `  ${ship.ship_type} x${ship.count} [mods: ${formatMods(ship.mods)}]\n`;
+    const ps = ship.positions.map(([c, r]) => `(${c},${r})`).join(", ");
+    out += `    positions: ${ps}\n`;
+  }
+  out += `\n${renderGrid(entry.ships)}`;
+  return out;
+}
+
+let csvRowsCache = null;
+async function loadCsv() {
+  if (csvRowsCache) return csvRowsCache;
+  const res = await fetch("./fleetdata.csv");
+  if (!res.ok) throw new Error(`Failed to load fleetdata.csv: ${res.status}`);
+  csvRowsCache = parseCsv(await res.text());
+  return csvRowsCache;
+}
+
+const outEl = document.getElementById("out");
+const btn = document.getElementById("go");
+
+async function run() {
+  outEl.classList.remove("muted");
+  outEl.textContent = "Working...";
+  btn.disabled = true;
+  try {
+    const node = document.getElementById("node").value.trim();
+    const stat = parseFloat(document.getElementById("stat").value);
+    const galaxy = parseInt(document.getElementById("galaxy").value, 10);
+    const version = parseInt(document.getElementById("version").value, 10);
+    const has_boss = document.getElementById("boss").checked;
+
+    if (!node) throw new Error("Node name required");
+    if (isNaN(stat)) throw new Error("Invalid stat level");
+
+    const rows = await loadCsv();
+    const fleet_event_id = findFleetEventId(rows, galaxy, node);
+    if (!fleet_event_id) throw new Error(`Could not find node '${node}' in galaxy ${galaxy}`);
+
+    const body = {
+      fleet_event_id,
+      version,
+      combat_stat_level: stat,
+      hazard_node_list: "",
+      has_boss,
+    };
+
+    const res = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`Server returned ${res.status}`);
+    const lines = await res.json();
+
+    const entries = [];
+    lines.forEach((line, i) => {
+      const trimmed = (line || "").trim();
+      if (!trimmed) return;
+      const e = parseFleetString(trimmed);
+      if (e) entries.push([i + 1, e]);
+    });
+    entries.sort((a, b) => b[1].resources_used - a[1].resources_used);
+
+    let text = `Found: ${fleet_event_id}\nSending: ${JSON.stringify(body)}\n\n`;
+    for (const [idx, entry] of entries) text += formatEntry(idx, entry) + "\n";
+    outEl.textContent = text.trimEnd() || "(no entries)";
+  } catch (e) {
+    outEl.textContent = `Error: ${e.message || e}`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+btn.addEventListener("click", run);
+document.addEventListener("keydown", e => {
+  if (e.key === "Enter" && !btn.disabled) run();
+});
+</script>
+</body>
+</html>
