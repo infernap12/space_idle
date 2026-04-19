@@ -256,10 +256,12 @@ function parseCsv(text) {
 }
 
 function findFleetEventId(rows, galaxy, nodeName) {
-  const prefix = `g${galaxy}_`;
+  // Galaxy prefixes vary: g4_, g5_, g5a_, g5b_, g2_4_, etc.
+  // Match gN followed by anything non-digit so g5 doesn't catch g50.
+  const re = new RegExp(`^g${galaxy}(?![0-9])`);
   const up = nodeName.toUpperCase();
   for (const { id, name } of rows) {
-    if (id.startsWith(prefix) && name === up) return id;
+    if (re.test(id) && name === up) return id;
   }
   return null;
 }
