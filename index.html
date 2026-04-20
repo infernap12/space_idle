@@ -23,12 +23,12 @@
   h1 { font-size: 1.25rem; margin: 0 0 1rem; }
   h2 { font-size: 0.95rem; margin: 0 0 0.5rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
   label { display: block; margin-top: 0.5rem; font-size: 0.85rem; color: var(--muted); }
-  input[type=number], input[type=text] {
+  input[type=number], input[type=text], select {
     width: 100%; padding: 0.5rem; background: var(--panel); color: var(--text);
     border: 1px solid var(--border); border-radius: 4px;
     font-family: inherit; font-size: 0.95rem;
   }
-  input:focus { outline: none; border-color: var(--accent); }
+  input:focus, select:focus { outline: none; border-color: var(--accent); }
   .row { display: flex; gap: 0.75rem; }
   .row > div { flex: 1; }
   button {
@@ -93,7 +93,8 @@
     width: 60px; height: 60px; background: #0a0c11; border: 1px solid var(--border);
     border-radius: 4px; position: relative; display: flex; align-items: center; justify-content: center;
   }
-  .cell svg { width: 80%; height: 80%; }
+  .cell svg, .cell .ship-img { width: 80%; height: 80%; object-fit: contain; }
+  .cell .ship-img { display: block; }
   .cell .badge {
     position: absolute; top: 2px; right: 3px; font-size: 0.65rem;
     background: rgba(0,0,0,0.6); color: var(--text); padding: 0 3px; border-radius: 3px;
@@ -107,6 +108,7 @@
     font-size: 0.85rem;
   }
   .ship-row .icon { width: 28px; height: 28px; flex-shrink: 0; }
+  .ship-row .icon svg, .ship-row .icon .ship-img { width: 100%; height: 100%; object-fit: contain; }
   .ship-row .name { font-weight: 600; }
   .ship-row .mods { color: var(--muted); font-size: 0.8rem; }
 
@@ -145,6 +147,7 @@
     border-radius: 4px; font-size: 0.85rem; color: var(--text);
   }
   .inv-item .icon { width: 24px; height: 24px; display: flex; }
+  .inv-item .icon svg, .inv-item .icon .ship-img { width: 100%; height: 100%; object-fit: contain; }
   .inv-item input { padding: 0.25rem 0.4rem; font-size: 0.85rem; }
 
   .hidden { display: none; }
@@ -162,7 +165,15 @@
   <div><label>Galaxy <input id="galaxy" type="number" value="4"></label></div>
   <div><label>Version <input id="version" type="number" value="75103"></label></div>
 </div>
-<label><input type="checkbox" id="boss"> Boss (for BB nodes)</label>
+<div class="row">
+  <div><label><input type="checkbox" id="boss"> Boss (for BB nodes)</label></div>
+  <div><label>Ship skin
+    <select id="skin">
+      <option value="default" selected>Default</option>
+      <option value="blue">Blue</option>
+    </select>
+  </label></div>
+</div>
 
 <div id="hazards" class="hazards hidden">
   <h2>Active hazards</h2>
@@ -220,6 +231,37 @@ const SHIP_TYPES = {
   Destroyer:         { color: "#b388ff", abbr: "Ds" },
   PlayerCommandShip: { color: "#ffffff", abbr: "CS" },
 };
+
+// File names inside assets/<skin>/. PlayerCommandShip is shared
+// (single variant) and lives at assets/fleet_base.png.
+const ASSET_FILES = {
+  Fighter: "player_fighter.png",
+  Corvette: "basic.png",
+  Frigate: "beefy.png",
+  Cruiser: "cruiser.png",
+  HeavyCruiser: "heavycruiser.png",
+  Destroyer: "destroyer.png",
+};
+
+function assetPath(skin, type) {
+  if (type === "PlayerCommandShip") return "assets/fleet_base.png";
+  const file = ASSET_FILES[type];
+  return file ? `assets/${skin}/${file}` : null;
+}
+
+function shipSvgDataUrl(type) {
+  return "data:image/svg+xml;utf8," + encodeURIComponent(shipSvg(type));
+}
+
+// Render an <img> sprite with an inline SVG silhouette as onerror
+// fallback, so missing asset files degrade gracefully.
+function shipVisual(type) {
+  const skin = state && state.skin ? state.skin : "default";
+  const path = assetPath(skin, type);
+  if (!path) return shipSvg(type);
+  const fb = shipSvgDataUrl(type);
+  return `<img class="ship-img" alt="${type}" src="${path}" onerror="this.onerror=null;this.src='${fb}'">`;
+}
 
 // Simple distinct silhouettes per ship type. viewBox 0 0 100 100.
 function shipSvg(type) {
@@ -397,6 +439,7 @@ const state = {
   entries: [],    // Filtered view currently displayed.
   index: 0,
   eventId: "",
+  skin: "default",
 };
 
 const els = {
@@ -426,14 +469,19 @@ const els = {
   hazardList: document.getElementById("hazardList"),
   invFilter: document.getElementById("invFilter"),
   invInputs: document.getElementById("invInputs"),
+  skin: document.getElementById("skin"),
 };
 
 function renderInventoryInputs() {
+  const prev = {};
+  els.invInputs.querySelectorAll("input[data-ship]").forEach(el => {
+    prev[el.dataset.ship] = el.value;
+  });
   els.invInputs.innerHTML = Object.keys(SHIP_TYPES).map(t => `
     <label class="inv-item" title="${t}">
-      <span class="icon">${shipSvg(t)}</span>
+      <span class="icon">${shipVisual(t)}</span>
       <span>${t}</span>
-      <input type="number" min="0" step="1" value="0" data-ship="${t}">
+      <input type="number" min="0" step="1" value="${prev[t] ?? 0}" data-ship="${t}">
     </label>`).join("");
 }
 renderInventoryInputs();
@@ -556,7 +604,7 @@ function renderGrid(ships) {
       if (type) {
         const badgeCount = countAt.get(key);
         const badge = badgeCount > 1 ? `<span class="badge">×${badgeCount}</span>` : "";
-        parts.push(`<div class="cell" title="${type} @ (${col},${row})">${shipSvg(type)}${badge}</div>`);
+        parts.push(`<div class="cell" title="${type} @ (${col},${row})">${shipVisual(type)}${badge}</div>`);
       } else {
         parts.push(`<div class="cell"></div>`);
       }
@@ -572,7 +620,7 @@ function renderShipList(ships) {
     const positions = s.positions.map(([c, r]) => `(${c},${r + 1})`).join(" ");
     return `
       <div class="ship-row">
-        <div class="icon">${shipSvg(s.ship_type)}</div>
+        <div class="icon">${shipVisual(s.ship_type)}</div>
         <div style="flex:1; min-width: 0;">
           <div><span class="name">${s.ship_type}</span> × ${s.count}</div>
           <div class="mods">${mods} · ${positions || "no positions"}</div>
@@ -673,6 +721,12 @@ els.invFilter.addEventListener("change", () => {
   applyFilter();
 });
 els.invInputs.addEventListener("input", applyFilter);
+
+els.skin.addEventListener("change", () => {
+  state.skin = els.skin.value;
+  renderInventoryInputs();
+  if (state.entries.length) showCurrent();
+});
 
 document.addEventListener("keydown", e => {
   const typing = document.activeElement && ["INPUT", "TEXTAREA"].includes(document.activeElement.tagName);
