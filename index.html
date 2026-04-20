@@ -129,6 +129,24 @@
     border-radius: 3px; margin-left: auto;
   }
 
+  .inventory { margin-top: 1rem; }
+  .inventory > label { color: var(--text); font-size: 0.9rem; }
+  .inv-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: 0.4rem; margin-top: 0.5rem;
+  }
+  .inv-item {
+    display: grid;
+    grid-template-columns: 24px 1fr 64px;
+    align-items: center; gap: 0.5rem;
+    padding: 0.3rem 0.5rem; margin: 0;
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 4px; font-size: 0.85rem; color: var(--text);
+  }
+  .inv-item .icon { width: 24px; height: 24px; display: flex; }
+  .inv-item input { padding: 0.25rem 0.4rem; font-size: 0.85rem; }
+
   .hidden { display: none; }
 </style>
 </head>
@@ -149,6 +167,11 @@
 <div id="hazards" class="hazards hidden">
   <h2>Active hazards</h2>
   <div id="hazardList"></div>
+</div>
+
+<div id="inventory" class="inventory">
+  <label><input type="checkbox" id="invFilter"> Only show fleets I can build</label>
+  <div id="invInputs" class="inv-grid hidden"></div>
 </div>
 
 <button id="go">Suggest</button>
@@ -370,7 +393,8 @@ async function loadCsv() {
 }
 
 const state = {
-  entries: [],   // Array of { origIdx, entry }
+  allEntries: [], // Full parsed server response, never mutated by filter.
+  entries: [],    // Filtered view currently displayed.
   index: 0,
   eventId: "",
 };
@@ -400,7 +424,58 @@ const els = {
   shipList: document.getElementById("shipList"),
   hazards: document.getElementById("hazards"),
   hazardList: document.getElementById("hazardList"),
+  invFilter: document.getElementById("invFilter"),
+  invInputs: document.getElementById("invInputs"),
 };
+
+function renderInventoryInputs() {
+  els.invInputs.innerHTML = Object.keys(SHIP_TYPES).map(t => `
+    <label class="inv-item" title="${t}">
+      <span class="icon">${shipSvg(t)}</span>
+      <span>${t}</span>
+      <input type="number" min="0" step="1" value="0" data-ship="${t}">
+    </label>`).join("");
+}
+renderInventoryInputs();
+
+function readInventory() {
+  const inv = {};
+  els.invInputs.querySelectorAll("input[data-ship]").forEach(el => {
+    inv[el.dataset.ship] = parseInt(el.value, 10) || 0;
+  });
+  return inv;
+}
+
+function fleetFits(entry, inv) {
+  return entry.ships.every(s => {
+    const required = Math.min(s.count, s.positions.length);
+    return (inv[s.ship_type] || 0) >= required;
+  });
+}
+
+function applyFilter() {
+  if (!state.allEntries.length) return;
+  const on = els.invFilter.checked;
+  if (on) {
+    const inv = readInventory();
+    state.entries = state.allEntries.filter(({ entry }) => fleetFits(entry, inv));
+  } else {
+    state.entries = state.allEntries.slice();
+  }
+  state.index = 0;
+  const n = state.entries.length;
+  const total = state.allEntries.length;
+  els.status.classList.remove("error");
+  if (!n) {
+    els.result.classList.add("hidden");
+    els.status.textContent = `0 of ${total} suggestion${total === 1 ? "" : "s"} match your ship inventory.`;
+    return;
+  }
+  const suffix = (on && n !== total) ? ` (of ${total})` : "";
+  els.status.textContent = `${n} suggestion${n === 1 ? "" : "s"}${suffix} for ${state.eventId}.`;
+  els.result.classList.remove("hidden");
+  showCurrent();
+}
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => (
@@ -574,13 +649,9 @@ async function run() {
 
     if (!parsed.length) throw new Error("Server returned no fleet entries");
 
-    state.entries = parsed;
-    state.index = 0;
+    state.allEntries = parsed;
     state.eventId = fleet_event_id;
-
-    els.status.textContent = `${parsed.length} suggestion${parsed.length === 1 ? "" : "s"} for ${fleet_event_id}.`;
-    els.result.classList.remove("hidden");
-    showCurrent();
+    applyFilter();
   } catch (e) {
     els.status.classList.add("error");
     els.status.textContent = `Error: ${e.message || e}`;
@@ -596,6 +667,12 @@ els.next.addEventListener("click", () => { state.index++; showCurrent(); });
 els.galaxy.addEventListener("input", () => { refreshNodeList(); refreshHazards(); });
 els.node.addEventListener("input", refreshHazards);
 els.node.addEventListener("change", refreshHazards);
+
+els.invFilter.addEventListener("change", () => {
+  els.invInputs.classList.toggle("hidden", !els.invFilter.checked);
+  applyFilter();
+});
+els.invInputs.addEventListener("input", applyFilter);
 
 document.addEventListener("keydown", e => {
   const typing = document.activeElement && ["INPUT", "TEXTAREA"].includes(document.activeElement.tagName);
