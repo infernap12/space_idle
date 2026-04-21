@@ -175,10 +175,7 @@
 <div class="row">
   <div><label><input type="checkbox" id="boss"> Boss (for BB nodes)</label></div>
   <div><label>Ship skin
-    <select id="skin">
-      <option value="default" selected>Default</option>
-      <option value="blue">Blue</option>
-    </select>
+    <select id="skin"></select>
   </label></div>
 </div>
 
@@ -245,14 +242,33 @@ const SHIP_TYPES = {
 let shipSpriteByType = null;
 let modIconById = null;
 
-// Insert the skin directory between the sprite path's directory and
-// its filename: "assets/player/basic.png" + "blue" -> "assets/player/blue/basic.png".
-// "default" uses the raw DB path.
+// Skin key -> folder name to insert before the sprite filename. The
+// internal key (used as <option value>) and on-disk folder can differ
+// (e.g. speed_racer -> "racer"). "show: false" hides from the picker.
+const SKINS = {
+  default:      { display_name: "Default",      folder: "",            show: true  },
+  blue:         { display_name: "Blue",         folder: "blue",        show: true  },
+  green:        { display_name: "Green",        folder: "green",       show: true  },
+  steampunk:    { display_name: "Steampunk",    folder: "steampunk",   show: true  },
+  speed_racer:  { display_name: "Speedster",    folder: "racer",       show: true  },
+  spacemas:     { display_name: "Spacemas",     folder: "spacemas",    show: true  },
+  spaceversary: { display_name: "Spaceversary", folder: "anniversary", show: true  },
+  retrofuture:  { display_name: "Retro Future", folder: "retrofuture", show: true  },
+  advanced:     { display_name: "Advanced",     folder: "advanced",    show: true  },
+  golden:       { display_name: "Golden",       folder: "golden",      show: true  },
+  alien:        { display_name: "Alien",        folder: "alien",       show: false },
+  haunted:      { display_name: "Haunted",      folder: "haunted",     show: true  },
+};
+
+// Insert the skin folder between the sprite path's directory and its
+// filename: "assets/player/basic.png" + blue -> "assets/player/blue/basic.png".
+// An empty folder (default skin) returns the path verbatim.
 function applySkinToPath(basePath, skin) {
-  if (!basePath || !skin || skin === "default") return basePath;
+  const folder = (SKINS[skin] && SKINS[skin].folder) || "";
+  if (!basePath || !folder) return basePath;
   const slash = basePath.lastIndexOf("/");
-  if (slash < 0) return `${skin}/${basePath}`;
-  return basePath.slice(0, slash + 1) + skin + "/" + basePath.slice(slash + 1);
+  if (slash < 0) return `${folder}/${basePath}`;
+  return basePath.slice(0, slash + 1) + folder + "/" + basePath.slice(slash + 1);
 }
 
 function shipSvgDataUrl(type) {
@@ -506,6 +522,16 @@ function renderInventoryInputs() {
     </label>`).join("");
 }
 renderInventoryInputs();
+
+function renderSkinOptions() {
+  const opts = Object.entries(SKINS)
+    .filter(([, meta]) => meta.show)
+    .map(([key, meta]) =>
+      `<option value="${key}"${key === state.skin ? " selected" : ""}>${escapeHtml(meta.display_name)}</option>`
+    );
+  els.skin.innerHTML = opts.join("");
+}
+renderSkinOptions();
 
 function readInventory() {
   const inv = {};
