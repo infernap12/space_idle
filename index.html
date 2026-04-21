@@ -112,6 +112,12 @@
   .ship-row .icon svg, .ship-row .icon .ship-img { width: 100%; height: 100%; object-fit: contain; }
   .ship-row .name { font-weight: 600; }
   .ship-row .mods { color: var(--muted); font-size: 0.8rem; }
+  .ship-row .mod-icons { display: inline-flex; gap: 3px; margin-right: 6px; vertical-align: middle; }
+  .ship-row .mod-img {
+    width: 18px; height: 18px; object-fit: contain;
+    background: #0a0c11; border: 1px solid var(--border);
+    border-radius: 3px; padding: 1px;
+  }
 
   .status { color: var(--muted); font-size: 0.85rem; margin-top: 1rem; }
   .error { color: #ff6b6b; }
@@ -233,21 +239,20 @@ const SHIP_TYPES = {
   PlayerCommandShip: { color: "#ffffff", abbr: "CS" },
 };
 
-// File names inside assets/<skin>/. PlayerCommandShip is shared
-// (single variant) and lives at assets/fleet_base.png.
-const ASSET_FILES = {
-  Fighter: "player_fighter.png",
-  Corvette: "basic.png",
-  Frigate: "beefy.png",
-  Cruiser: "cruiser.png",
-  HeavyCruiser: "heavycruiser.png",
-  Destroyer: "destroyer.png",
-};
+// Ship sprite base paths keyed by fleet_ships.id ("Fighter", "Corvette",
+// …). Populated from the DB: ships.select_sprite via fleet_ships.ship.
+// Mod icon paths keyed by fleet_mods.id.
+let shipSpriteByType = null;
+let modIconById = null;
 
-function assetPath(skin, type) {
-  if (type === "PlayerCommandShip") return "assets/fleet_base.png";
-  const file = ASSET_FILES[type];
-  return file ? `assets/${skin}/${file}` : null;
+// Insert the skin directory between the sprite path's directory and
+// its filename: "assets/player/basic.png" + "blue" -> "assets/player/blue/basic.png".
+// "default" uses the raw DB path.
+function applySkinToPath(basePath, skin) {
+  if (!basePath || !skin || skin === "default") return basePath;
+  const slash = basePath.lastIndexOf("/");
+  if (slash < 0) return `${skin}/${basePath}`;
+  return basePath.slice(0, slash + 1) + skin + "/" + basePath.slice(slash + 1);
 }
 
 function shipSvgDataUrl(type) {
@@ -258,10 +263,18 @@ function shipSvgDataUrl(type) {
 // fallback, so missing asset files degrade gracefully.
 function shipVisual(type) {
   const skin = state && state.skin ? state.skin : "default";
-  const path = assetPath(skin, type);
-  if (!path) return shipSvg(type);
+  const base = shipSpriteByType ? shipSpriteByType.get(type) : null;
+  if (!base) return shipSvg(type);
+  const path = applySkinToPath(base, skin);
   const fb = shipSvgDataUrl(type);
   return `<img class="ship-img" alt="${type}" src="${path}" onerror="this.onerror=null;this.src='${fb}'">`;
+}
+
+function modVisual(modId) {
+  const path = modIconById ? modIconById.get(modId) : null;
+  if (!path) return "";
+  const label = escapeHtml(modId);
+  return `<img class="mod-img" alt="${label}" title="${label}" src="${escapeHtml(path)}" onerror="this.style.display='none'">`;
 }
 
 // Simple distinct silhouettes per ship type. viewBox 0 0 100 100.
@@ -398,7 +411,27 @@ async function loadDb() {
   const hazardRes = db.exec(
     "SELECT _parent, type, repeat, nodes_effected FROM fleet_events__hazard ORDER BY _parent, _index"
   );
+  // Ship sprites: fleet_ships.id (player-facing type) -> ships.select_sprite.
+  const shipRes = db.exec(
+    "SELECT fs.id, s.select_sprite FROM fleet_ships fs " +
+    "JOIN ships s ON s.id = fs.ship WHERE fs.is_player_ship = 1"
+  );
+  // Fleet mod icons: fleet_mods.id -> icon path.
+  const modRes = db.exec("SELECT id, icon FROM fleet_mods");
   db.close();
+
+  shipSpriteByType = new Map();
+  if (shipRes.length) {
+    for (const [id, sprite] of shipRes[0].values) {
+      if (sprite) shipSpriteByType.set(id, sprite);
+    }
+  }
+  modIconById = new Map();
+  if (modRes.length) {
+    for (const [id, icon] of modRes[0].values) {
+      if (icon) modIconById.set(id, icon);
+    }
+  }
 
   const hazardsByParent = new Map();
   if (hazardRes.length) {
@@ -604,14 +637,18 @@ function renderGrid(ships) {
 function renderShipList(ships) {
   if (!ships.length) return `<div class="ship-row"><span class="mods">No ships</span></div>`;
   return ships.map(s => {
-    const mods = s.mods.length ? s.mods.join(", ") : "no mods";
+    const modIcons = s.mods.map(m => modVisual(m)).filter(Boolean).join("");
+    const modText = s.mods.length ? s.mods.join(", ") : "no mods";
     const positions = s.positions.map(([c, r]) => `(${c},${r + 1})`).join(" ");
     return `
       <div class="ship-row">
         <div class="icon">${shipVisual(s.ship_type)}</div>
         <div style="flex:1; min-width: 0;">
           <div><span class="name">${s.ship_type}</span> × ${s.count}</div>
-          <div class="mods">${mods} · ${positions || "no positions"}</div>
+          <div class="mods">
+            ${modIcons ? `<span class="mod-icons">${modIcons}</span>` : ""}
+            <span class="mod-text">${modText} · ${positions || "no positions"}</span>
+          </div>
         </div>
       </div>`;
   }).join("");
