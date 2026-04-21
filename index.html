@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>Fleet Suggest</title>
+<script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-wasm.js"></script>
 <style>
   :root {
     --bg: #0b0d12;
@@ -327,53 +328,6 @@ function parseFleetString(raw) {
   return { resources_used, resources_committed, fleet_stats: isNaN(fleet_stats) ? null : fleet_stats, ships };
 }
 
-// RFC-4180 row parser. Handles quoted fields, "" escapes, and newlines
-// inside quotes. Returns a 2D array of [row][field] strings.
-function parseCsvText(text) {
-  const rows = [];
-  let fields = [];
-  let cur = "";
-  let inQ = false;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (inQ) {
-      if (c === '"') {
-        if (text[i + 1] === '"') { cur += '"'; i++; }
-        else inQ = false;
-      } else cur += c;
-    } else {
-      if (c === '"' && cur === "") inQ = true;
-      else if (c === ",") { fields.push(cur); cur = ""; }
-      else if (c === "\n" || c === "\r") {
-        if (c === "\r" && text[i + 1] === "\n") i++;
-        fields.push(cur); cur = "";
-        if (fields.some(f => f.length)) rows.push(fields);
-        fields = [];
-      } else cur += c;
-    }
-  }
-  if (cur.length || fields.length) { fields.push(cur); rows.push(fields); }
-  return rows;
-}
-
-function parseCsv(text) {
-  const all = parseCsvText(text);
-  const out = [];
-  for (let i = 1; i < all.length; i++) {
-    const f = all[i];
-    if (!f[0]) continue;
-    const id = f[0];
-    const name = f[1] || "";
-    const hazardRaw = f[12] || "";
-    let hazard = null;
-    if (hazardRaw) {
-      try { hazard = JSON.parse(hazardRaw); } catch (_) { hazard = null; }
-    }
-    out.push({ id, name, hazard });
-  }
-  return out;
-}
-
 function bucketFor(id) {
   // "g5a_b4" -> "5", "g2_4_b4a" -> "2", "g10_b1" -> "10".
   const m = id.match(/^g(\d+)/);
@@ -391,7 +345,7 @@ function findFleetEventId(rows, galaxy, nodeName) {
   return null;
 }
 
-let csvRowsCache = null;
+let rowsCache = null;
 let rowsByGalaxyCache = null;
 let hazardsByTargetCache = null;
 
@@ -425,13 +379,47 @@ function buildIndexes(rows) {
   }
 }
 
-async function loadCsv() {
-  if (csvRowsCache) return csvRowsCache;
-  const res = await fetch("./fleetdata.csv");
-  if (!res.ok) throw new Error(`Failed to load fleetdata.csv: ${res.status}`);
-  csvRowsCache = parseCsv(await res.text());
-  buildIndexes(csvRowsCache);
-  return csvRowsCache;
+const SQLJS_CDN = "https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/";
+async function loadDb() {
+  if (rowsCache) return rowsCache;
+  if (typeof initSqlJs !== "function") {
+    throw new Error("sql.js failed to load (check network / CDN)");
+  }
+  const [SQL, res] = await Promise.all([
+    initSqlJs({ locateFile: f => SQLJS_CDN + f }),
+    fetch("./game_data.sqlite"),
+  ]);
+  if (!res.ok) throw new Error(`Failed to load game_data.sqlite: ${res.status}`);
+  const buf = await res.arrayBuffer();
+  const db = new SQL.Database(new Uint8Array(buf));
+
+  // fleet_events (id, name) + fleet_events__hazard (one row per hazard entry).
+  const [events] = db.exec("SELECT id, name FROM fleet_events ORDER BY id");
+  const hazardRes = db.exec(
+    "SELECT _parent, type, repeat, nodes_effected FROM fleet_events__hazard ORDER BY _parent, _index"
+  );
+  db.close();
+
+  const hazardsByParent = new Map();
+  if (hazardRes.length) {
+    for (const [parent, type, repeat, nodesJson] of hazardRes[0].values) {
+      let nodes = [];
+      try { nodes = JSON.parse(nodesJson || "[]"); } catch (_) { nodes = []; }
+      if (!hazardsByParent.has(parent)) hazardsByParent.set(parent, []);
+      hazardsByParent.get(parent).push({
+        type, repeat: !!repeat, nodes_effected: nodes,
+      });
+    }
+  }
+
+  const rows = [];
+  for (const [id, name] of events.values) {
+    rows.push({ id, name, hazard: hazardsByParent.get(id) || null });
+  }
+
+  rowsCache = rows;
+  buildIndexes(rows);
+  return rows;
 }
 
 const state = {
@@ -546,7 +534,7 @@ function refreshNodeList() {
 }
 
 function refreshHazards() {
-  if (!csvRowsCache || !hazardsByTargetCache) {
+  if (!rowsCache || !hazardsByTargetCache) {
     els.hazards.classList.add("hidden");
     return;
   }
@@ -557,7 +545,7 @@ function refreshHazards() {
     els.hazardList.innerHTML = "";
     return;
   }
-  const id = findFleetEventId(csvRowsCache, galaxy, node);
+  const id = findFleetEventId(rowsCache, galaxy, node);
   const hazards = id ? (hazardsByTargetCache.get(id) || []) : [];
   if (!hazards.length) {
     els.hazards.classList.add("hidden");
@@ -668,7 +656,7 @@ async function run() {
     if (!node) throw new Error("Node name required");
     if (isNaN(stat)) throw new Error("Invalid stat level");
 
-    const rows = await loadCsv();
+    const rows = await loadDb();
     const fleet_event_id = findFleetEventId(rows, galaxy, node);
     if (!fleet_event_id) throw new Error(`Could not find node '${node}' in galaxy ${galaxy}`);
 
@@ -738,7 +726,12 @@ document.addEventListener("keydown", e => {
 });
 
 // Eagerly load CSV so autocomplete and hazard toggles are ready.
-loadCsv().then(() => { refreshNodeList(); refreshHazards(); }).catch(() => {});
+// Eagerly load the sqlite DB so autocomplete and hazard toggles are
+// ready before the user hits Suggest.
+loadDb().then(() => { refreshNodeList(); refreshHazards(); }).catch(e => {
+  els.status.classList.add("error");
+  els.status.textContent = `Error loading database: ${e.message || e}`;
+});
 </script>
 </body>
 </html>
