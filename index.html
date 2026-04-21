@@ -158,7 +158,7 @@
 
 <div class="row">
   <div><label>Node <input id="node" type="text" list="nodeList" placeholder="e.g. B1 or BB3" autocomplete="off"></label></div>
-  <div><label>Stat level <input id="stat" type="number" step="any" placeholder="e.g. 12.5"></label></div>
+  <div><label>Stat level <input id="stat" type="number" step="0.05" placeholder="e.g. 12.5"></label></div>
 </div>
 <datalist id="nodeList"></datalist>
 <div class="row">
@@ -568,7 +568,7 @@ function refreshHazards() {
     const repeatTag = h.repeat ? " · repeat" : "";
     const selfTag = h.isSelf ? `<span class="self-tag">self</span>` : "";
     return `<label class="hazard-item">
-      <input type="checkbox" checked data-source-id="${escapeHtml(h.source_id)}">
+      <input type="checkbox" data-source-id="${escapeHtml(h.source_id)}">
       <span><b>${escapeHtml(h.source_name)}</b> <span class="meta">${escapeHtml(h.source_id)} · ${escapeHtml(h.type)}${repeatTag}</span></span>
       ${selfTag}
     </label>`;
