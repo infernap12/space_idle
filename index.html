@@ -206,6 +206,7 @@
       <div><div class="k">Committed</div><div class="v" id="sResCommitted">–</div></div>
       <div><div class="k">Saved</div><div class="v" id="sSaved">–</div></div>
       <div><div class="k">Fleet stats</div><div class="v" id="sStats">–</div></div>
+      <div id="sBossWrap" class="hidden"><div class="k">Boss dmg / FR</div><div class="v" id="sBossDmg">–</div></div>
       <div><div class="k">Entry #</div><div class="v" id="sOrig">–</div></div>
       <div><div class="k">Event</div><div class="v" id="sEvent" style="font-size:0.8rem">–</div></div>
     </div>
@@ -359,7 +360,23 @@ function parseFleetString(raw) {
     ships.push({ ship_type, mods, positions, count });
   }
 
-  return { resources_used, resources_committed, fleet_stats: isNaN(fleet_stats) ? null : fleet_stats, ships };
+  // Trailing pipe segment is the boss-station damage dealt this run
+  // (only meaningful in BB/boss fights, otherwise 0). It has no ";"
+  // so the ship-parsing loop above breaks before consuming it.
+  let boss_damage = 0;
+  const tail = parts[parts.length - 1];
+  if (tail && !tail.includes(";")) {
+    const n = parseFloat(tail);
+    if (!isNaN(n)) boss_damage = n;
+  }
+
+  return {
+    resources_used,
+    resources_committed,
+    fleet_stats: isNaN(fleet_stats) ? null : fleet_stats,
+    boss_damage,
+    ships,
+  };
 }
 
 function bucketFor(id) {
@@ -484,6 +501,7 @@ const state = {
   index: 0,
   eventId: "",
   skin: "default",
+  hasBoss: false,
 };
 
 const els = {
@@ -505,6 +523,8 @@ const els = {
   sResCommitted: document.getElementById("sResCommitted"),
   sSaved: document.getElementById("sSaved"),
   sStats: document.getElementById("sStats"),
+  sBossWrap: document.getElementById("sBossWrap"),
+  sBossDmg: document.getElementById("sBossDmg"),
   sOrig: document.getElementById("sOrig"),
   sEvent: document.getElementById("sEvent"),
   shipGrid: document.getElementById("shipGrid"),
@@ -704,6 +724,11 @@ function showCurrent() {
   els.sResCommitted.textContent = fmt(entry.resources_committed);
   els.sSaved.textContent = fmt(entry.resources_committed - entry.resources_used);
   els.sStats.textContent = entry.fleet_stats !== null ? fmt(entry.fleet_stats) : "–";
+  els.sBossWrap.classList.toggle("hidden", !state.hasBoss);
+  if (state.hasBoss) {
+    const ratio = entry.resources_used > 0 ? entry.boss_damage / entry.resources_used : 0;
+    els.sBossDmg.textContent = `${fmt(entry.boss_damage)} (${ratio.toFixed(3)})`;
+  }
   els.sOrig.textContent = `#${origIdx}`;
   els.sEvent.textContent = state.eventId;
 
@@ -750,13 +775,26 @@ async function run() {
       const e = parseFleetString(trimmed);
       if (e) parsed.push({ origIdx: i + 1, entry: e });
     });
-    // Best first: lowest resources_used.
-    parsed.sort((a, b) => a.entry.resources_used - b.entry.resources_used);
+    // Boss runs: rank by boss_damage / resources_used (descending) so
+    // the most efficient damage-per-FR fleet shows first. Ties and
+    // zero-FR rows fall back to lowest FR for stability. Otherwise:
+    // lowest FR wins, like before.
+    if (has_boss) {
+      parsed.sort((a, b) => {
+        const ra = a.entry.resources_used > 0 ? a.entry.boss_damage / a.entry.resources_used : -Infinity;
+        const rb = b.entry.resources_used > 0 ? b.entry.boss_damage / b.entry.resources_used : -Infinity;
+        if (rb !== ra) return rb - ra;
+        return a.entry.resources_used - b.entry.resources_used;
+      });
+    } else {
+      parsed.sort((a, b) => a.entry.resources_used - b.entry.resources_used);
+    }
 
     if (!parsed.length) throw new Error("Server returned no fleet entries");
 
     state.allEntries = parsed;
     state.eventId = fleet_event_id;
+    state.hasBoss = has_boss;
     applyFilter();
   } catch (e) {
     els.status.classList.add("error");
