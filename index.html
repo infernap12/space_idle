@@ -428,9 +428,11 @@ async function loadDb() {
   const db = new SQL.Database(new Uint8Array(buf));
 
   // fleet_events (id, name) + fleet_events__hazard (one row per hazard entry).
-  const [events] = db.exec("SELECT id, name FROM fleet_events ORDER BY id");
+  // Order both queries by rowid to preserve the data file's encounter
+  // order — the suggest API expects hazard_node_list ids in that order.
+  const [events] = db.exec("SELECT id, name FROM fleet_events ORDER BY rowid");
   const hazardRes = db.exec(
-    "SELECT _parent, type, repeat, nodes_effected FROM fleet_events__hazard ORDER BY _parent, _index"
+    "SELECT _parent, type, repeat, nodes_effected FROM fleet_events__hazard ORDER BY _row_id"
   );
   // Ship sprites: fleet_ships.id (player-facing type) -> ships.select_sprite.
   const shipRes = db.exec(
