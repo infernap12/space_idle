@@ -325,7 +325,12 @@ function shipSvg(type) {
 
 function parseFleetString(raw) {
   let s = raw.trim();
+  // V2 strings use "*" between positions; legacy v1 strings (no V2
+  // prefix) use ".". Same coords either way — they're always integers
+  // because "." would otherwise eat decimal points.
+  let posDelim = "*";
   if (s.startsWith("V2")) s = s.slice(2);
+  else posDelim = ".";
   const parts = s.split("|");
   if (parts.length < 2) return null;
 
@@ -345,7 +350,7 @@ function parseFleetString(raw) {
     const ship_type = sp[0];
     const mods = sp[1] ? sp[1].split(",").filter(Boolean) : [];
     const positions = sp[2]
-      ? sp[2].split("*").map(p => {
+      ? sp[2].split(posDelim).map(p => {
           const [c, r] = p.split(",");
           return [parseInt(c, 10), parseInt(r, 10)];
         }).filter(([c, r]) => !isNaN(c) && !isNaN(r))
