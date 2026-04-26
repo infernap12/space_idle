@@ -736,6 +736,63 @@ function showCurrent() {
   els.shipList.innerHTML = renderShipList(entry.ships);
 }
 
+// Yields the current order first, then every distinct permutation.
+function* hazardOrderings(ids) {
+  if (ids.length <= 1) { yield ids.slice(); return; }
+  const seen = new Set();
+  const seed = ids.slice();
+  seen.add(seed.join(""));
+  yield seed;
+  function* permute(prefix, rest) {
+    if (!rest.length) {
+      const key = prefix.join("");
+      if (!seen.has(key)) { seen.add(key); yield prefix.slice(); }
+      return;
+    }
+    for (let i = 0; i < rest.length; i++) {
+      prefix.push(rest[i]);
+      const next = rest.slice(0, i).concat(rest.slice(i + 1));
+      yield* permute(prefix, next);
+      prefix.pop();
+    }
+  }
+  yield* permute([], ids);
+}
+
+// The wire order of hazard_node_list isn't something we can derive
+// from the DB — the game hard-codes it. If the seed order 404s, walk
+// the remaining permutations until one succeeds. n! grows fast, so
+// cap brute-forcing at 6 hazards (720 attempts).
+async function fetchSuggestion(baseBody, sourceIds) {
+  const HARD_CAP = 6;
+  const orderings = sourceIds.length > HARD_CAP
+    ? [sourceIds.slice()]
+    : Array.from(hazardOrderings(sourceIds));
+  const total = orderings.length;
+  let lastStatus = 0;
+  for (let i = 0; i < total; i++) {
+    if (total > 1) {
+      els.status.textContent = `Working… (hazard order ${i + 1}/${total})`;
+    }
+    const body = { ...baseBody, hazard_node_list: orderings[i].join("") };
+    const res = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) return { res, attempt: i + 1, total };
+    lastStatus = res.status;
+    if (res.status !== 404) {
+      return { res, attempt: i + 1, total };
+    }
+  }
+  throw new Error(
+    sourceIds.length > HARD_CAP
+      ? `Server returned 404 (and ${sourceIds.length} hazards > ${HARD_CAP}, so permutations weren't tried)`
+      : `Server returned 404 for all ${total} hazard order${total === 1 ? "" : "ings"}`
+  );
+}
+
 async function run() {
   els.status.classList.remove("error");
   els.status.textContent = "Working…";
@@ -755,16 +812,15 @@ async function run() {
     const fleet_event_id = findFleetEventId(rows, galaxy, node);
     if (!fleet_event_id) throw new Error(`Could not find node '${node}' in galaxy ${galaxy}`);
 
-    const hazard_node_list = Array.from(
+    const sourceIds = Array.from(
       els.hazardList.querySelectorAll("input:checked"),
-    ).map(el => el.dataset.sourceId).join("");
+    ).map(el => el.dataset.sourceId);
 
-    const body = { fleet_event_id, version, combat_stat_level: stat, hazard_node_list, has_boss };
-    const res = await fetch(API_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    const baseBody = { fleet_event_id, version, combat_stat_level: stat, has_boss };
+    const { res, attempt, total } = await fetchSuggestion(baseBody, sourceIds);
+    if (total > 1) {
+      console.log(`Hazard order resolved on attempt ${attempt}/${total}`);
+    }
     if (!res.ok) throw new Error(`Server returned ${res.status}`);
     const lines = await res.json();
 
