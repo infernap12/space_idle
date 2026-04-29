@@ -227,6 +227,17 @@
 <script>
 const API_URL = "https://api.spaceidle.xyz/suggest_fleet_battle/";
 
+// Battles whose grid is 3×5 instead of the default 2×5. The size is
+// hard-coded in game data (Vector2(3, 5)); not mirrored anywhere in
+// the SQLite, so we keep the list in sync by hand.
+const WIDE_GRID_EVENTS = new Set([
+  "g6_b46", // galaxy6_battle46
+  "g7_b7",  // galaxy7_battle7
+  "g8_b17", // galaxy8_battle17
+  "g9_b18", // galaxy9_battle18
+  "g9_b19", // galaxy9_battle19
+]);
+
 const SHIP_TYPES = {
   Fighter:           { color: "#ffd23f", abbr: "Ft" },
   Corvette:          { color: "#4ecdc4", abbr: "Co" },
@@ -656,8 +667,12 @@ function fmt(n, d = 2) {
   return Number(n).toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
 }
 
-function renderGrid(ships) {
-  // 2 columns (B=1, A=0) × 5 rows.
+function renderGrid(ships, eventId) {
+  // Default fight grid is 2 cols (B=1, A=0) × 5 rows. A handful of
+  // late-game battles widen to 3 cols (C=2, B=1, A=0); their grid
+  // size is hard-coded in game data so we mirror that here.
+  const cols = WIDE_GRID_EVENTS.has(eventId) ? 3 : 2;
+  const colLabels = ["A", "B", "C"]; // index = col number
   const occ = new Map();
   const countAt = new Map();
   for (const ship of ships) {
@@ -669,10 +684,13 @@ function renderGrid(ships) {
   }
 
   const parts = [];
-  parts.push(`<div class="rhdr"></div><div class="hdr">B</div><div class="hdr">A</div>`);
+  parts.push(`<div class="rhdr"></div>`);
+  for (let col = cols - 1; col >= 0; col--) {
+    parts.push(`<div class="hdr">${colLabels[col]}</div>`);
+  }
   for (let row = 0; row < 5; row++) {
     parts.push(`<div class="rhdr">${row + 1}</div>`);
-    for (const col of [1, 0]) {
+    for (let col = cols - 1; col >= 0; col--) {
       const key = `${col},${row}`;
       const type = occ.get(key);
       if (type) {
@@ -684,7 +702,7 @@ function renderGrid(ships) {
       }
     }
   }
-  return parts.join("");
+  return { html: parts.join(""), cols };
 }
 
 function renderShipList(ships) {
@@ -732,7 +750,9 @@ function showCurrent() {
   els.sOrig.textContent = `#${origIdx}`;
   els.sEvent.textContent = state.eventId;
 
-  els.shipGrid.innerHTML = renderGrid(entry.ships);
+  const grid = renderGrid(entry.ships, state.eventId);
+  els.shipGrid.style.gridTemplateColumns = `1.5rem repeat(${grid.cols}, 60px)`;
+  els.shipGrid.innerHTML = grid.html;
   els.shipList.innerHTML = renderShipList(entry.ships);
 }
 
