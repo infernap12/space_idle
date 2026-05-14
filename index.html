@@ -170,7 +170,7 @@
 <datalist id="nodeList"></datalist>
 <div class="row">
   <div><label>Galaxy <input id="galaxy" type="number" value="4"></label></div>
-  <div><label>Version <input id="version" type="number" value="75103"></label></div>
+  <div><label>Version <input id="version" type="number" value="80104"></label></div>
 </div>
 <div class="row">
   <div><label><input type="checkbox" id="boss"> Boss (for BB nodes)</label></div>
@@ -231,11 +231,13 @@ const API_URL = "https://api.spaceidle.xyz/suggest_fleet_battle/";
 // hard-coded in game data (Vector2(3, 5)); not mirrored anywhere in
 // the SQLite, so we keep the list in sync by hand.
 const WIDE_GRID_EVENTS = new Set([
-  "g6_b46", // galaxy6_battle46
-  "g7_b7",  // galaxy7_battle7
-  "g8_b17", // galaxy8_battle17
-  "g9_b18", // galaxy9_battle18
-  "g9_b19", // galaxy9_battle19
+  "g6_b46",  // galaxy6_battle46
+  "g7_b7",   // galaxy7_battle7
+  "g8_b17",  // galaxy8_battle17
+  "g9_b18",  // galaxy9_battle18
+  "g9_b19",  // galaxy9_battle19
+  "g10_b21", // galaxy10_battle21
+  "g10_b22", // galaxy10_battle22
 ]);
 
 const SHIP_TYPES = {
