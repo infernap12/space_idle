@@ -17,7 +17,7 @@ use parser::find_fleet_event_id;
 use state::{new_state, AppState};
 use types::{ParsedEntry, SKINS};
 
-const GAME_DB_URL: &str = "/assets/game_data.sqlite";
+const GAME_DB_URL: &str = "assets/game_data.sqlite";
 
 fn main() {
     dioxus::launch(App);

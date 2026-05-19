@@ -1,0 +1,64 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+      - claude/port-to-dioxus-PAFVN
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pages-deploy
+  cancel-in-progress: true
+
+env:
+  DIOXUS_CLI_VERSION: "0.7.9"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo registry, index, and target
+        uses: Swatinem/rust-cache@v2
+
+      - name: Cache dioxus-cli binary
+        id: cache-dx
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/dx
+          key: dx-${{ env.DIOXUS_CLI_VERSION }}-${{ runner.os }}
+
+      - name: Install dioxus-cli
+        if: steps.cache-dx.outputs.cache-hit != 'true'
+        run: cargo install dioxus-cli --version ${{ env.DIOXUS_CLI_VERSION }} --locked
+
+      - name: Bundle web app
+        run: dx bundle --platform web --release --out-dir docs
+
+      - name: Prepare Pages output
+        run: |
+          if [ -d docs/public ]; then
+            shopt -s dotglob
+            mv docs/public/* docs/
+            rmdir docs/public
+          fi
+          cp docs/index.html docs/404.html
+          ls -la docs/ | head -20
+
+      - name: Deploy to gh-pages branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./docs
+          publish_branch: gh-pages
+          force_orphan: true
