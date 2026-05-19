@@ -38,23 +38,25 @@ pub fn ShipGrid(ships: Vec<FleetShip>, event_id: String) -> Element {
                 for col in (0..cols).rev() {
                     {
                         let key = (col as i32, row as i32);
-                        match occ.get(&key) {
-                            Some(ty) => {
-                                let badge_count = count_at.get(&key).copied().unwrap_or(0);
-                                let title = format!("{ty} @ ({col},{row})");
-                                let visual = ship_visual_html(ty, &skin, &sprites);
-                                rsx! {
+                        if let Some(ty) = occ.get(&key) {
+                            let badge_count = count_at.get(&key).copied().unwrap_or(0);
+                            let title = format!("{ty} @ ({col},{row})");
+                            let visual = ship_visual_html(ty, &skin, &sprites);
+                            rsx! {
+                                div {
+                                    class: "cell",
+                                    title: "{title}",
                                     div {
-                                        class: "cell",
-                                        title: "{title}",
+                                        style: "width:100%;height:100%;display:flex;align-items:center;justify-content:center;",
                                         dangerous_inner_html: "{visual}",
-                                        if badge_count > 1 {
-                                            span { class: "badge", "×{badge_count}" }
-                                        }
+                                    }
+                                    if badge_count > 1 {
+                                        span { class: "badge", "×{badge_count}" }
                                     }
                                 }
                             }
-                            None => rsx! { div { class: "cell" } },
+                        } else {
+                            rsx! { div { class: "cell" } }
                         }
                     }
                 }
