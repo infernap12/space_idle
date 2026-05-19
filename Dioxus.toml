@@ -1,0 +1,13 @@
+[application]
+name = "fleet-suggest"
+
+[web.app]
+title = "Fleet Suggest"
+
+[web.watcher]
+reload_html = true
+
+[web.resource]
+dev = []
+style = ["/assets/style.css"]
+script = []
