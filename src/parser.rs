@@ -45,7 +45,9 @@ pub fn parse_fleet_string(raw: &str) -> Option<FleetEntry> {
                 p.split(pos_delim)
                     .filter_map(|pair| {
                         let (c, r) = pair.split_once(',')?;
-                        Some((c.parse().ok()?, r.parse().ok()?))
+                        let c: f64 = c.parse().ok()?;
+                        let r: f64 = r.parse().ok()?;
+                        Some((c as i32, r as i32))
                     })
                     .collect()
             })
